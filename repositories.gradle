@@ -1,0 +1,25 @@
+ext {
+  creds = {
+        username = ArtifactRepositoryUser
+        password = ArtifactRepositoryPassword
+  }
+
+  localRepositories = [
+        source: {
+            maven {
+                url ArtifactRepositorySourceUrl
+                credentials creds
+                allowInsecureProtocol true
+            }
+        },
+
+        destination: {
+            maven {
+                name 'Artifact'
+                url ArtifactRepositoryReleasesUrl
+                allowInsecureProtocol true
+                credentials creds
+            }
+        }
+    ]
+}

@@ -1,0 +1,114 @@
+buildscript {
+    apply from: 'repositories.gradle'
+    repositories localRepositories.source as Closure
+    dependencies {
+        classpath "uk.co.ceilingcat:gradle.plugins.SemanticVersionsPlugin:${versions_semantic_versions_plugin}"
+    }
+}
+
+plugins {
+    id 'jacoco'
+    id 'maven-publish'
+    id 'org.jetbrains.dokka' version "${versions_dokka}"
+    id 'org.jetbrains.kotlin.jvm' version "${versions_kotlin}"
+    id 'org.jetbrains.kotlin.plugin.serialization' version "${versions_kotlin}"
+    id 'org.jlleitschuh.gradle.ktlint' version "${versions_klint}"
+}
+apply plugin: 'uk.co.ceilingcat.SemanticVersions'
+
+group 'uk.co.ceilingcat.kalendarapi'
+description 'An Kotln API for iCal'
+
+dependencies {
+    implementation "io.arrow-kt:arrow-core:${versions_arrow}"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:${versions_kotlin}"
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:${versions_kotlinx_serialization_json}"
+
+    testImplementation "org.junit.jupiter:junit-jupiter-api:${versions_junit_jupiter}"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:${versions_junit_jupiter}"
+}
+
+compileKotlin { kotlinOptions.jvmTarget = JavaVersion.VERSION_11 as String }
+compileTestKotlin { kotlinOptions.jvmTarget = JavaVersion.VERSION_11 as String }
+
+repositories localRepositories.source as Closure
+
+test {
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+    }
+    useJUnitPlatform()
+
+    reports {
+        junitXml.enabled = true
+        html.enabled = true
+    }
+}
+
+dokkaHtml {
+    dokkaSourceSets {
+        configureEach {
+            jdkVersion.set(11)
+            displayName.set('JVM')
+            includes.from('src/main/kotlin/packages.md')
+            remoteUrl.set(java.net.URL(
+                'https://github.com/chrisdenman/KalendarApi/tree/main/src/main/kotlin'))
+            externalDocumentationLink {
+                url = URL('https://github.com/chrisdenman/KalendarApi/docs/dokka/html')
+            }
+        }
+    }
+}
+
+task dokkaJar(type: Jar, dependsOn: [setProjectVersion, dokkaHtml], group: 'packaging') {
+    getArchiveClassifier().set('javadoc')
+    from javadoc.destinationDir
+}
+
+setProjectVersion.dependsOn patchIncrement
+patchIncrement.onlyIf(new Spec<Task>() {
+    boolean isSatisfiedBy(Task task) {
+        !task.project.hasProperty('isRelease')
+    }
+})
+
+task assembleBundle(group: 'packaging', type: Zip, dependsOn: [jar]) {
+    setArchiveClassifier('bundle')
+
+    from (project.rootDir) {
+        include 'README.md'
+    }
+
+    from (project.buildDir) {
+        includeEmptyDirs false
+        include 'libs/*.jar'
+        filesMatching 'libs/*.jar', {it.setRelativePath(
+            new RelativePath(true, it.getRelativePath().getLastName()))}
+    }
+
+    setDestinationDirectory(new File(project.buildDir, "libs"))
+}
+
+publishing {
+    repositories localRepositories.destination as Closure
+
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifact(kotlinSourcesJar)
+            artifact(dokkaJar)
+            artifact(assembleBundle) {
+                classifier 'bundle'
+                extension 'zip'
+            }
+        }
+    }
+}
+
+clean.dependsOn(patchIncrement)
+compileKotlin.dependsOn([patchIncrement, processResources])
+processResources.dependsOn([setProjectVersion, clean])
+ktlintCheck.dependsOn(ktlintFormat)
+jar.dependsOn([kotlinSourcesJar, dokkaJar])
+assemble.dependsOn(assembleBundle)
+publish.dependsOn(assemble)
